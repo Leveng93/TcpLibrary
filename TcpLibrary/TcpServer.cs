@@ -19,7 +19,6 @@ namespace TcpLibrary
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisonnected;
         public event EventHandler<DataReceivedEventArgs> DataRceived;
 
-
         public TcpServer(IPEndPoint endPoint)
         {
             _listener = new TcpListener(endPoint);
@@ -28,7 +27,6 @@ namespace TcpLibrary
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
 
         public EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
-
 
         public bool Listening => _listening;
         public async Task StartAsync(CancellationToken? token = null)
