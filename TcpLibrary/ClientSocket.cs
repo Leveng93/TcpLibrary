@@ -3,15 +3,20 @@ using System.Net.Sockets;
 
 namespace TcpLibrary
 {
-    public class ClientConnection
+    public class ClientSocket
     {
         readonly TcpClient _client;
         public Guid Id { get; }
 
-        public ClientConnection(TcpClient client)
+        public ClientSocket(TcpClient client)
         {
             Id = new Guid();
             _client = client;
+        }
+
+        public NetworkStream GetStream()
+        {
+            return _client.GetStream();
         }
     }
 }

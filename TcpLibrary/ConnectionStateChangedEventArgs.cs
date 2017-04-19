@@ -4,6 +4,6 @@ namespace TcpLibrary
 {
     public class ClientConnectionStateChangedEventArgs : EventArgs
     {
-        public ClientConnection Client { get; set; }
+        public ClientSocket Client { get; set; }
     }
 }

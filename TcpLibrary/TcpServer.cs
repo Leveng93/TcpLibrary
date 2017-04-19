@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -10,14 +11,16 @@ namespace TcpLibrary
     public class TcpServer : IDisposable
     {
         readonly TcpListener _listener;
-        readonly BlockingCollection<ClientConnection> _clients;
+        readonly List<ClientSocket> _clients;
         bool _listening;
+        int _bufferSize;
         CancellationTokenSource _tokenSource;    
         CancellationToken _token;
 
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisonnected;
         public event EventHandler<DataReceivedEventArgs> DataRceived;
+        public event EventHandler<UnhandledExceptionEventArgs> ExceptionThrown;
 
         public TcpServer(IPEndPoint endPoint)
         {
@@ -27,6 +30,19 @@ namespace TcpLibrary
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
 
         public EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
+        public int BufferSize
+        {
+            get { return _bufferSize; }
+            set
+            {
+                if (value < 2)
+                    throw new ArgumentOutOfRangeException("Buffer size in to small");
+                if (value > (2 ^ 32))
+                    throw new ArgumentOutOfRangeException("Buffer size is to large");
+                
+                _bufferSize = value;
+            }           
+        }
 
         public bool Listening => _listening;
         public async Task StartAsync(CancellationToken? token = null)
@@ -43,18 +59,12 @@ namespace TcpLibrary
             {
                 while (!_token.IsCancellationRequested)
                 {   
-                    await Task.Run(async () =>
-                    {
-                        var tcpClient = await _listener.AcceptTcpClientAsync();
-                        var clientConnection = new ClientConnection(tcpClient);
-                        _clients.Add(clientConnection);
-
-                        var eventArgs = new ClientConnectionStateChangedEventArgs
-                        {
-                            Client = clientConnection
-                        };                    
-                        ClientConnected?.Invoke(this, eventArgs);
-                    }, _token);
+                    var tcpClient = await _listener.AcceptTcpClientAsync();
+                    
+                    var task = StartHandleConnectionAsync(tcpClient, _token);
+                    // if already faulted, re-throw any error on the calling context
+                    if (task.IsFaulted)
+                        task.Wait();
                 }
             }
             finally
@@ -67,6 +77,51 @@ namespace TcpLibrary
         public void Stop()
         {
             _tokenSource?.Cancel();
+        }
+
+        private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient, CancellationToken token)
+        {
+            var client = new ClientSocket(acceptedTcpClient);
+            lock(_clients)
+                _clients.Add(client);
+
+            try
+            {
+                ClientConnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
+                {
+                    Client = client
+                });
+                await HandleConnectionAsync(client, _token);
+            }
+            catch (Exception ex)
+            {
+                ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
+                {
+                    ExceptionObject = ex
+                });
+            }
+            finally
+            {
+                lock(_clients)
+                    _clients.Remove(client);
+            }
+        }
+
+        private async Task HandleConnectionAsync(ClientSocket client, CancellationToken token)
+        {
+            await Task.Yield();
+            // continue asynchronously on another threads
+
+            using (var networkStream = client.GetStream())
+            {
+                var buffer = new byte[_bufferSize];
+                await networkStream.ReadAsync(buffer, 0, buffer.Length);
+                DataRceived?.Invoke(this, new DataReceivedEventArgs
+                {
+                    Client = client,
+                    Data = buffer
+                });
+            }
         }
 
         #region IDisposable Support
