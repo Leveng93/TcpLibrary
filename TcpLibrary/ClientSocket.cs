@@ -14,9 +14,14 @@ namespace TcpLibrary
             _client = client;
         }
 
-        public NetworkStream GetStream()
+        internal NetworkStream GetStream()
         {
             return _client.GetStream();
+        }
+
+        public void Disconnect()
+        {
+            
         }
     }
 }

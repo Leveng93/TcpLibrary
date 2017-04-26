@@ -25,6 +25,7 @@ namespace TcpLibrary
         public TcpServer(IPEndPoint endPoint)
         {
             _listener = new TcpListener(endPoint);
+            _clients = new List<ClientSocket>();
         }
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
@@ -61,7 +62,7 @@ namespace TcpLibrary
                 {   
                     var tcpClient = await _listener.AcceptTcpClientAsync();
                     
-                    var task = StartHandleConnectionAsync(tcpClient, _token);
+                    var task = StartHandleConnectionAsync(tcpClient);
                     // if already faulted, re-throw any error on the calling context
                     if (task.IsFaulted)
                         task.Wait();
@@ -79,7 +80,7 @@ namespace TcpLibrary
             _tokenSource?.Cancel();
         }
 
-        private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient, CancellationToken token)
+        private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
             var client = new ClientSocket(acceptedTcpClient);
             lock(_clients)
@@ -91,7 +92,7 @@ namespace TcpLibrary
                 {
                     Client = client
                 });
-                await HandleConnectionAsync(client, _token);
+                await HandleConnectionAsync(client);
             }
             catch (Exception ex)
             {
@@ -107,7 +108,7 @@ namespace TcpLibrary
             }
         }
 
-        private async Task HandleConnectionAsync(ClientSocket client, CancellationToken token)
+        private async Task HandleConnectionAsync(ClientSocket client)
         {
             await Task.Yield();
             // continue asynchronously on another threads
@@ -115,7 +116,7 @@ namespace TcpLibrary
             using (var networkStream = client.GetStream())
             {
                 var buffer = new byte[_bufferSize];
-                await networkStream.ReadAsync(buffer, 0, buffer.Length);
+                await networkStream.ReadAsync(buffer, 0, buffer.Length, _token);
                 DataRceived?.Invoke(this, new DataReceivedEventArgs
                 {
                     Client = client,
