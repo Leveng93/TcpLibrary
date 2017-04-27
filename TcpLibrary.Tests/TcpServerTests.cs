@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -15,7 +16,7 @@ namespace TcpLibrary.Tests
         [InlineData(0x0000000FFFFFFFFF, 8000)] // IP is greater then maximum
         [InlineData(0, -1)] // Port is less then minimum
         [InlineData(0, ushort.MaxValue + 1)] // Port is greater then maximum
-        public void CtorIncorrectEndPointTest(long ip, int port)
+        public void CreatingServerWithWrongEndPointShouldFail(long ip, int port)
         {
             Assert.Throws<ArgumentOutOfRangeException>(()=>{
                 var server = new TcpServer(ip, port);
@@ -23,7 +24,7 @@ namespace TcpLibrary.Tests
         }
 
         [Fact]
-        public void RunningServerThatIsAlreadyRunning()
+        public void RunningServerThatIsAlreadyRunningShouldFail()
         {   
             var server = new TcpServer(IPAddress.Parse(ip), port);
             
@@ -45,6 +46,45 @@ namespace TcpLibrary.Tests
                     throw ex.InnerException;
                 }
             });
+        }
+
+        [Fact]
+        public void RunningServerOnAlreadyUsingPortShouldFail()
+        {
+            var endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 8000);
+            var listener = new TcpListener(endPoint);
+            var tcpServer = new TcpServer(endPoint);
+            Assert.Throws<SocketException>(()=>{
+                try 
+                {
+                    listener.Start();
+                    Task.Run(async ()=> await tcpServer.StartAsync()).Wait();
+                }
+                catch(AggregateException ex)
+                {
+                    throw ex.InnerException;
+                }
+                finally
+                {
+                    tcpServer.Stop();
+                    listener.Stop();
+                }
+            });
+        }
+
+        [Fact]
+        public void StoppingServerShouldNotHaveDelay()
+        {
+            var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000);
+            try 
+            {
+                Task.Run(async ()=> await tcpServer.StartAsync()).Wait(2000);
+                tcpServer.Stop();
+            }
+            finally
+            {
+                tcpServer.Stop();
+            }
         }
     }
 }

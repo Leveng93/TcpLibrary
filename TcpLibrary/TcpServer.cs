@@ -37,7 +37,7 @@ namespace TcpLibrary
             set
             {
                 if (value < 2)
-                    throw new ArgumentOutOfRangeException("Buffer size in to small");
+                    throw new ArgumentOutOfRangeException("Buffer size is to small");
                 if (value > (2 ^ 32))
                     throw new ArgumentOutOfRangeException("Buffer size is to large");
                 
@@ -53,21 +53,21 @@ namespace TcpLibrary
 
             _tokenSource = CancellationTokenSource.CreateLinkedTokenSource(token ?? new CancellationToken());
             _token = _tokenSource.Token;
-            _listener.Start();
+            _listener.Start();      
             _listening = true;
-            
+
             try
             {
                 while (!_token.IsCancellationRequested)
                 {   
-                    var tcpClient = await _listener.AcceptTcpClientAsync();
-                    
+                    var tcpClient = await _listener.AcceptTcpClientAsync().WithWaitCancellation(_token);              
                     var task = StartHandleConnectionAsync(tcpClient);
                     // if already faulted, re-throw any error on the calling context
                     if (task.IsFaulted)
                         task.Wait();
                 }
             }
+            catch(OperationCanceledException) { } // server stopped by cancellation token source
             finally
             {
                 _listener.Stop();
@@ -82,12 +82,12 @@ namespace TcpLibrary
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
-            var client = new ClientSocket(acceptedTcpClient);
-            lock(_clients)
-                _clients.Add(client);
 
+            var client = new ClientSocket(acceptedTcpClient);
             try
             {
+                lock(_clients)
+                    _clients.Add(client);
                 ClientConnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
