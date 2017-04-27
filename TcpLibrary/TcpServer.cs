@@ -46,6 +46,7 @@ namespace TcpLibrary
         }
 
         public bool Listening => _listening;
+
         public async Task StartAsync(CancellationToken? token = null)
         {
             if (_listening)
@@ -60,7 +61,7 @@ namespace TcpLibrary
             {
                 while (!_token.IsCancellationRequested)
                 {   
-                    var tcpClient = await _listener.AcceptTcpClientAsync().WithWaitCancellation(_token);              
+                    var tcpClient = await _listener.AcceptTcpClientAsync().WithWaitCancellation(_token);
                     var task = StartHandleConnectionAsync(tcpClient);
                     // if already faulted, re-throw any error on the calling context
                     if (task.IsFaulted)

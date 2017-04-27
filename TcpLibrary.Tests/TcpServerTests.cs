@@ -29,9 +29,9 @@ namespace TcpLibrary.Tests
             var server = new TcpServer(IPAddress.Parse(ip), port);
             
             var doubleStartTask = Task.Run(async () => {
-                var firstStart = Task.Run(()=> server.StartAsync());
+                var firstStart = server.StartAsync();
                 await Task.Delay(1000);
-                var secondStart = Task.Run(()=> server.StartAsync());
+                var secondStart = server.StartAsync();
         
                 await secondStart;    
             });
@@ -58,7 +58,7 @@ namespace TcpLibrary.Tests
                 try 
                 {
                     listener.Start();
-                    Task.Run(async ()=> await tcpServer.StartAsync()).Wait();
+                    tcpServer.StartAsync().Wait();
                 }
                 catch(AggregateException ex)
                 {
@@ -78,8 +78,9 @@ namespace TcpLibrary.Tests
             var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000);
             try 
             {
-                Task.Run(async ()=> await tcpServer.StartAsync()).Wait(2000);
+                var startTask = tcpServer.StartAsync();
                 tcpServer.Stop();
+                startTask.Wait();
             }
             finally
             {
