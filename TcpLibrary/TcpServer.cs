@@ -8,19 +8,16 @@ using System.Threading.Tasks;
 
 namespace TcpLibrary
 {
-    public class TcpServer : IDisposable
+    public class TcpServer : TcpBase, IDisposable
     {
         readonly TcpListener _listener;
         readonly List<ClientSocket> _clients;
         bool _listening;
-        int _bufferSize;
-        CancellationTokenSource _tokenSource;    
-        CancellationToken _token;
 
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisonnected;
         public event EventHandler<DataReceivedEventArgs> DataRceived;
-        public event EventHandler<UnhandledExceptionEventArgs> ExceptionThrown;
+        public event EventHandler<UnhandledExceptionEventArgs> ClientThreadExceptionThrown;
 
         public TcpServer(IPEndPoint endPoint)
         {
@@ -30,20 +27,7 @@ namespace TcpLibrary
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
 
-        public EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
-        public int BufferSize
-        {
-            get { return _bufferSize; }
-            set
-            {
-                if (value < 2)
-                    throw new ArgumentOutOfRangeException("Buffer size is to small");
-                if (value > (2 ^ 32))
-                    throw new ArgumentOutOfRangeException("Buffer size is to large");
-                
-                _bufferSize = value;
-            }           
-        }
+        public override EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
 
         public bool Listening => _listening;
 
@@ -63,9 +47,6 @@ namespace TcpLibrary
                 {   
                     var tcpClient = await _listener.AcceptTcpClientAsync().WithWaitCancellation(_token);
                     var task = StartHandleConnectionAsync(tcpClient);
-                    // if already faulted, re-throw any error on the calling context
-                    if (task.IsFaulted)
-                        task.Wait();
                 }
             }
             catch(OperationCanceledException) { } // server stopped by cancellation token source
@@ -97,7 +78,7 @@ namespace TcpLibrary
             }
             catch (Exception ex)
             {
-                ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
+                ClientThreadExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
                 {
                     ExceptionObject = ex
                 });
@@ -106,6 +87,11 @@ namespace TcpLibrary
             {
                 lock(_clients)
                     _clients.Remove(client);
+                client.Disconnect();
+                ClientDisonnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
+                {
+                    Client = client
+                });
             }
         }
 
@@ -136,6 +122,10 @@ namespace TcpLibrary
                 if (disposing)
                 {
                     Stop();
+                    ClientConnected = null;
+                    ClientDisonnected = null;
+                    DataRceived = null;
+                    ClientThreadExceptionThrown = null;
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.

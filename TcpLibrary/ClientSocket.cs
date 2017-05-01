@@ -1,33 +1,23 @@
 using System;
+using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TcpLibrary
 {
-    public class ClientSocket
+    public class ClientSocket : TcpBase
     {
         readonly TcpClient _client;
         public Guid Id { get; }
-        int _bufferSize;
-        public int BufferSize
-        {
-            get { return _bufferSize; }
-            set
-            {
-                if (value < 2)
-                    throw new ArgumentOutOfRangeException("Buffer size is too small");
-                if (value > (2 ^ 32))
-                    throw new ArgumentOutOfRangeException("Buffer size is too large");
-                
-                _bufferSize = value;
-            }           
-        }
 
         public ClientSocket(TcpClient client)
         {
             Id = new Guid();
             _client = client;
         }
+
+        public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
 
         internal NetworkStream GetStream()
         {
@@ -42,9 +32,20 @@ namespace TcpLibrary
             }
         }
 
+        public async Task SendAsync(byte[] data, CancellationToken? token)
+        {
+            _tokenSource = CancellationTokenSource.CreateLinkedTokenSource(token ?? new CancellationToken());
+            _token = _tokenSource.Token;
+            using (var networkStream = _client.GetStream())
+            {
+                await networkStream.WriteAsync(data, 0, data.Length, _token);
+            }
+        }
+
         public void Disconnect()
         {
-            
+            _tokenSource?.Cancel();
+            _client.Client.Shutdown(SocketShutdown.Both);
         }
     }
 }
