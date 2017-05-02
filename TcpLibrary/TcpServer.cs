@@ -65,7 +65,7 @@ namespace TcpLibrary
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
 
-            var client = new ClientSocket(acceptedTcpClient);
+            ClientSocket client = new ClientSocket(acceptedTcpClient);
             try
             {
                 lock(_clients)
@@ -102,13 +102,18 @@ namespace TcpLibrary
 
             using (var networkStream = client.GetStream())
             {
-                var buffer = new byte[_bufferSize];
-                await networkStream.ReadAsync(buffer, 0, buffer.Length, _token);
-                DataRceived?.Invoke(this, new DataReceivedEventArgs
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(client.DisconnectToken, _token);
+                var ct = cts.Token;
+                while(client.IsConnected && !cts.IsCancellationRequested)
                 {
-                    Client = client,
-                    Data = buffer
-                });
+                    var buffer = new byte[_bufferSize];
+                    await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
+                    DataRceived?.Invoke(this, new DataReceivedEventArgs
+                    {
+                        Client = client,
+                        Data = buffer
+                    });
+                }
             }
         }
 
