@@ -73,18 +73,62 @@ namespace TcpLibrary.Tests
         }
 
         [Fact]
-        public void StoppingServerShouldNotHaveDelay()
+        public void StoppingServerAwaitingConnections()
         {
-            var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000);
-            try 
+            using (var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000))
             {
+                var startTime = DateTime.Now;
+
                 var startTask = tcpServer.StartAsync();
                 tcpServer.Stop();
                 startTask.Wait();
+
+                Assert.InRange((DateTime.Now - startTime).Milliseconds, 0, 1000);
             }
-            finally
+        }
+
+        [Fact]
+        public void ClientShouldSuccessfullyConnect()
+        {
+            using (var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000))
             {
-                tcpServer.Stop();
+                var serverTask = tcpServer.StartAsync();
+                serverTask.Wait(200);
+
+                Assert.Raises<ClientConnectionStateChangedEventArgs>(
+                    (handler) => tcpServer.ClientConnected += handler, 
+                    (handler) => tcpServer.ClientConnected -= handler, 
+                    ()=>{ 
+                        using(var client = new TcpClient())
+                        {
+                            client.ConnectAsync(IPAddress.Parse("127.0.0.1"), 8000).Wait();
+                        }
+                    }
+                );
+            }
+        }
+
+
+        [Fact]
+        public void ClientShouldSuccessfullyDisconnect()
+        {
+            using (var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000))
+            {
+                var serverTask = tcpServer.StartAsync();
+                serverTask.Wait(200);
+
+                Assert.Raises<ClientConnectionStateChangedEventArgs>(
+                    (handler) => tcpServer.ClientDisonnected += handler, 
+                    (handler) => tcpServer.ClientDisonnected -= handler, 
+                    ()=>{ 
+                        using(var client = new TcpClient())
+                        {
+                            client.ConnectAsync(IPAddress.Parse("127.0.0.1"), 8000).Wait();
+                            Task.Delay(500).Wait();
+                        }
+                    }
+                );
+                serverTask.Wait(500);      
             }
         }
     }

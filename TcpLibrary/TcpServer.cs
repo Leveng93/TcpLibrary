@@ -10,8 +10,12 @@ namespace TcpLibrary
 {
     public class TcpServer : TcpBase, IDisposable
     {
+        const int defaultPollingRate = 250;
+        const int defaultBufferSize = 8192;
         readonly TcpListener _listener;
         readonly List<ClientSocket> _clients;
+        Timer _pollingTimer;
+        int _pollingRate;
         bool _listening;
 
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
@@ -22,7 +26,10 @@ namespace TcpLibrary
         public TcpServer(IPEndPoint endPoint)
         {
             _listener = new TcpListener(endPoint);
+            _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             _clients = new List<ClientSocket>();
+            _pollingRate = defaultPollingRate;
+            _bufferSize = defaultBufferSize;
         }
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
@@ -38,8 +45,9 @@ namespace TcpLibrary
 
             _tokenSource = CancellationTokenSource.CreateLinkedTokenSource(token ?? new CancellationToken());
             _token = _tokenSource.Token;
-            _listener.Start();      
+            _listener.Start();
             _listening = true;
+            _pollingTimer = new Timer(PollClients, new object(), 0, _pollingRate);
 
             try
             {
@@ -60,6 +68,16 @@ namespace TcpLibrary
         public void Stop()
         {
             _tokenSource?.Cancel();
+        }
+
+        private void PollClients(object state)
+        {
+            lock(_clients)
+                foreach(var client in _clients)
+                {
+                    // if (!client.IsConnected)
+                        // client.Disconnect();
+                }
         }
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
@@ -87,7 +105,7 @@ namespace TcpLibrary
             {
                 lock(_clients)
                     _clients.Remove(client);
-                client.Disconnect();
+                client.Dispose();
                 ClientDisonnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
@@ -97,22 +115,25 @@ namespace TcpLibrary
 
         private async Task HandleConnectionAsync(ClientSocket client)
         {
-            await Task.Yield();
+            // await Task.Yield();
             // continue asynchronously on another threads
 
             using (var networkStream = client.GetStream())
             {
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(client.DisconnectToken, _token);
                 var ct = cts.Token;
-                while(client.IsConnected && !cts.IsCancellationRequested)
+                while(!cts.IsCancellationRequested)
                 {
                     var buffer = new byte[_bufferSize];
-                    await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
-                    DataRceived?.Invoke(this, new DataReceivedEventArgs
+                    var bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
+                    if (bytesRead != 0)
                     {
-                        Client = client,
-                        Data = buffer
-                    });
+                        DataRceived?.Invoke(this, new DataReceivedEventArgs
+                        {
+                            Client = client,
+                            Data = buffer
+                        });                   
+                    }
                 }
             }
         }

@@ -8,6 +8,7 @@ namespace TcpLibrary
 {
     public class ClientSocket : TcpBase, IDisposable
     {
+        const int defaultBufferSize = 8192;
         readonly TcpClient _client;
         public Guid Id { get; }
 
@@ -17,6 +18,7 @@ namespace TcpLibrary
             _client = client;
             _tokenSource = new CancellationTokenSource();
             _token = _tokenSource.Token;
+            _bufferSize = defaultBufferSize;
         }   
 
         public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
@@ -48,12 +50,6 @@ namespace TcpLibrary
             }
         }
 
-        public void Disconnect()
-        {
-            _tokenSource?.Cancel();
-            _client.Client.Shutdown(SocketShutdown.Both);
-        }
-
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
@@ -63,7 +59,8 @@ namespace TcpLibrary
             {
                 if (disposing)
                 {
-                    Disconnect();
+                    _tokenSource.Cancel();
+                    _client.Client.Shutdown(SocketShutdown.Both);
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.

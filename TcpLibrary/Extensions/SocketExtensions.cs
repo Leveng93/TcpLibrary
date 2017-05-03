@@ -1,3 +1,4 @@
+using System;
 using System.Net.Sockets;
 
 namespace TcpLibrary
@@ -8,7 +9,7 @@ namespace TcpLibrary
         {
             try
             {
-                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
+                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0 || !socket.Connected);
             }
             catch
             {
