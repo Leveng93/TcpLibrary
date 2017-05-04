@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -35,6 +36,7 @@ namespace TcpLibrary
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
 
         public override EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
+        public ReadOnlyCollection<ClientSocket> Clients { get { lock(_clients) return _clients.AsReadOnly(); } }
 
         public bool Listening => _listening;
 
@@ -75,9 +77,8 @@ namespace TcpLibrary
         {
             lock(_clients)
                 foreach(var client in _clients)
-                    lock(client)                    
-                        if (!client.IsConnected)
-                            client.Disconnect();    
+                    if (!client.IsConnected)
+                        client.Disconnect();
         }
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)

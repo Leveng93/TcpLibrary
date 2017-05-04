@@ -104,7 +104,6 @@ namespace TcpLibrary.Tests
             }
         }
 
-
         [Fact]
         public void ClientShouldSuccessfullyDisconnect()
         {
