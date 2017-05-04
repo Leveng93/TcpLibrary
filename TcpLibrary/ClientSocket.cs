@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace TcpLibrary
 {
-    public class ClientSocket : TcpBase, IDisposable
+    public class ClientSocket : TcpBase
     {
         const int defaultBufferSize = 8192;
         readonly TcpClient _client;
@@ -14,12 +14,12 @@ namespace TcpLibrary
 
         public ClientSocket(TcpClient client)
         {
-            Id = new Guid();
+            Id = Guid.NewGuid();
             _client = client;
             _tokenSource = new CancellationTokenSource();
             _token = _tokenSource.Token;
             _bufferSize = defaultBufferSize;
-        }   
+        }
 
         public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
 
@@ -34,6 +34,12 @@ namespace TcpLibrary
 
         public async Task SendAsync(byte[] data)
         {
+            if (!this.IsConnected)
+            {
+                Disconnect();
+                return;
+            }              
+
             using (var networkStream = _client.GetStream())
             {
                 await networkStream.WriteAsync(data, 0, data.Length, _token);
@@ -42,6 +48,12 @@ namespace TcpLibrary
 
         public async Task SendAsync(byte[] data, CancellationToken token)
         {
+            if (!this.IsConnected)
+            {
+                Disconnect();
+                return;
+            }                
+
             var cts = CancellationTokenSource.CreateLinkedTokenSource(token, _token);
             var ct = _tokenSource.Token;
             using (var networkStream = _client.GetStream())
@@ -50,40 +62,11 @@ namespace TcpLibrary
             }
         }
 
-        #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
-
-        protected virtual void Dispose(bool disposing)
+        public void Disconnect()
         {
-            if (!disposedValue)
-            {
-                if (disposing)
-                {
-                    _tokenSource.Cancel();
-                    _client.Client.Shutdown(SocketShutdown.Both);
-                }
-
-                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
-                // TODO: set large fields to null.
-
-                disposedValue = true;
-            }
+            _tokenSource.Cancel();
+            if (_client.Client.Connected)
+                _client.Client.Shutdown(SocketShutdown.Both);
         }
-
-        // TODO: override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources.
-        // ~ClientSocket() {
-        //   // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-        //   Dispose(false);
-        // }
-
-        // This code added to correctly implement the disposable pattern.
-        public void Dispose()
-        {
-            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-            Dispose(true);
-            // TODO: uncomment the following line if the finalizer is overridden above.
-            // GC.SuppressFinalize(this);
-        }
-        #endregion
     }
 }

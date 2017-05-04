@@ -29,11 +29,8 @@ namespace TcpLibrary.Tests
             var server = new TcpServer(IPAddress.Parse(ip), port);
             
             var doubleStartTask = Task.Run(async () => {
-                var firstStart = server.StartAsync();
-                await Task.Delay(1000);
-                var secondStart = server.StartAsync();
-        
-                await secondStart;    
+                server.StartAsync().Wait(100);
+                await server.StartAsync(); 
             });
 
             Assert.Throws<InvalidOperationException>(()=>{
@@ -93,7 +90,6 @@ namespace TcpLibrary.Tests
             using (var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000))
             {
                 var serverTask = tcpServer.StartAsync();
-                serverTask.Wait(200);
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
                     (handler) => tcpServer.ClientConnected += handler, 
@@ -113,22 +109,20 @@ namespace TcpLibrary.Tests
         public void ClientShouldSuccessfullyDisconnect()
         {
             using (var tcpServer = new TcpServer(IPAddress.Parse("127.0.0.1"), 8000))
+            using(var client = new TcpClient())
             {
                 var serverTask = tcpServer.StartAsync();
-                serverTask.Wait(200);
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
                     (handler) => tcpServer.ClientDisonnected += handler, 
                     (handler) => tcpServer.ClientDisonnected -= handler, 
-                    ()=>{ 
-                        using(var client = new TcpClient())
-                        {
-                            client.ConnectAsync(IPAddress.Parse("127.0.0.1"), 8000).Wait();
-                            Task.Delay(500).Wait();
-                        }
+                    ()=>{                         
+                        client.ConnectAsync(IPAddress.Parse("127.0.0.1"), 8000).Wait();
+                        client.Client.Shutdown(SocketShutdown.Both);
+                        Task.Delay(100).Wait();              
                     }
                 );
-                serverTask.Wait(500);      
+                serverTask.Wait(200);
             }
         }
     }

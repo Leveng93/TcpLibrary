@@ -61,6 +61,7 @@ namespace TcpLibrary
             finally
             {
                 _listener.Stop();
+                _pollingTimer.Dispose();
                 _listening = false;
             }
         }
@@ -74,16 +75,15 @@ namespace TcpLibrary
         {
             lock(_clients)
                 foreach(var client in _clients)
-                {
-                    // if (!client.IsConnected)
-                        // client.Disconnect();
-                }
+                    lock(client)                    
+                        if (!client.IsConnected)
+                            client.Disconnect();    
         }
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
 
-            ClientSocket client = new ClientSocket(acceptedTcpClient);
+            var client = new ClientSocket(acceptedTcpClient);
             try
             {
                 lock(_clients)
@@ -105,24 +105,24 @@ namespace TcpLibrary
             {
                 lock(_clients)
                     _clients.Remove(client);
-                client.Dispose();
                 ClientDisonnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
                 });
+                client.Disconnect();
             }
         }
 
         private async Task HandleConnectionAsync(ClientSocket client)
         {
-            // await Task.Yield();
+            await Task.Yield();
             // continue asynchronously on another threads
 
             using (var networkStream = client.GetStream())
             {
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(client.DisconnectToken, _token);
                 var ct = cts.Token;
-                while(!cts.IsCancellationRequested)
+                while(client.IsConnected && !cts.IsCancellationRequested)
                 {
                     var buffer = new byte[_bufferSize];
                     var bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
@@ -132,7 +132,7 @@ namespace TcpLibrary
                         {
                             Client = client,
                             Data = buffer
-                        });                   
+                        });
                     }
                 }
             }
