@@ -30,36 +30,28 @@ namespace TcpLibrary
             return _client.GetStream();
         }
 
-        public bool IsConnected => _client.Client.IsConnected();
+        public override bool IsActive => _client.Client.IsConnected();
 
         public async Task SendAsync(byte[] data)
         {
-            if (!this.IsConnected)
+            if (!this.IsActive)
             {
                 Disconnect();
                 return;
-            }              
-
-            using (var networkStream = _client.GetStream())
-            {
-                await networkStream.WriteAsync(data, 0, data.Length, _token);
             }
+            await _client.GetStream().WriteAsync(data, 0, data.Length, _token);
         }
 
         public async Task SendAsync(byte[] data, CancellationToken token)
         {
-            if (!this.IsConnected)
+            if (!this.IsActive)
             {
                 Disconnect();
                 return;
-            }                
-
+            }
             var cts = CancellationTokenSource.CreateLinkedTokenSource(token, _token);
             var ct = _tokenSource.Token;
-            using (var networkStream = _client.GetStream())
-            {
-                await networkStream.WriteAsync(data, 0, data.Length, ct);
-            }
+            await _client.GetStream().WriteAsync(data, 0, data.Length, ct);
         }
 
         public void Disconnect()

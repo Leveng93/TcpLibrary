@@ -24,5 +24,6 @@ namespace TcpLibrary
         }
 
         public abstract EndPoint EndPoint { get; }
+        public abstract bool IsActive { get; }
     }
 }

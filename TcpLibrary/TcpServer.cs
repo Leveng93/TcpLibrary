@@ -38,7 +38,7 @@ namespace TcpLibrary
         public override EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
         public ReadOnlyCollection<ClientSocket> Clients { get { lock(_clients) return _clients.AsReadOnly(); } }
 
-        public bool Listening => _listening;
+        public override bool IsActive => _listening;
 
         public async Task StartAsync(CancellationToken? token = null)
         {
@@ -77,7 +77,7 @@ namespace TcpLibrary
         {
             lock(_clients)
                 foreach(var client in _clients)
-                    if (!client.IsConnected)
+                    if (!client.IsActive)
                         client.Disconnect();
         }
 
@@ -106,11 +106,11 @@ namespace TcpLibrary
             {
                 lock(_clients)
                     _clients.Remove(client);
+                client.Disconnect();
                 ClientDisonnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
-                });
-                client.Disconnect();
+                });                
             }
         }
 
@@ -123,7 +123,7 @@ namespace TcpLibrary
             {
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(client.DisconnectToken, _token);
                 var ct = cts.Token;
-                while(client.IsConnected && !cts.IsCancellationRequested)
+                while(client.IsActive && !cts.IsCancellationRequested)
                 {
                     var buffer = new byte[_bufferSize];
                     var bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
