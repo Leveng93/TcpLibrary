@@ -191,5 +191,49 @@ namespace TcpLibrary.Tests
                 catch (OperationCanceledException) {}
             }
         }
+
+        [Fact]
+        public void ManyClientsConnected()
+        {
+            using (var tcpServer = new TcpServer(IPAddress.Parse(ip), port))
+            {   
+                var clientsCount = 2000;
+                var clientsLeft = clientsCount;
+                var requestStr = String.Concat(Enumerable.Repeat("Ping", 1000));
+                var responseStr = String.Concat(Enumerable.Repeat("Pong", 1000));
+                var cts = new CancellationTokenSource();
+                var ct = cts.Token;
+                tcpServer.DataRceived += async (s, e) => {
+                    var receivedRequest = Encoding.UTF8.GetString(e.Data, 0, e.BytesCount);
+                    await e.Client.SendAsync(Encoding.UTF8.GetBytes(responseStr), ct);
+                    // Console.WriteLine($"Client {e.Client.EndPoint} sended {receivedRequest}");
+                    // Console.WriteLine($"Server sended {responseStr} to {e.Client.EndPoint}");
+                    Assert.Equal(requestStr, receivedRequest);
+                    e.Client.Disconnect();                    
+                };
+                tcpServer.ClientDisconnected += (s, e) => {
+                    clientsLeft -= 1; 
+                    if (clientsLeft == 0)
+                        cts.Cancel();
+                };
+                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+
+                var serverTask = tcpServer.StartAsync();
+                var clients = new List<TcpClient>(clientsCount);
+                for (int i = 0; i < clientsCount; i++)
+                {
+                    var client = new TcpClient();
+                    clients.Add(client);
+                    client.ConnectAsync(IPAddress.Parse(ip), port)
+                        .ContinueWith((ar) => client.Client.Send(Encoding.UTF8.GetBytes(requestStr)));
+                }
+                try {
+                    serverTask.Wait(ct);
+                    foreach(var client in clients)
+                        client.Dispose();
+                }
+                catch (OperationCanceledException) {}
+            }
+        }
     }
 }
