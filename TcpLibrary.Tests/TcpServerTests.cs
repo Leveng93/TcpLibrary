@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -135,7 +136,7 @@ namespace TcpLibrary.Tests
                     ()=>{                         
                         client.ConnectAsync(IPAddress.Parse(ip), port).Wait();
                         client.Client.Shutdown(SocketShutdown.Both);
-                        Task.Delay(100).Wait();
+                        Task.Delay(tcpServer.ClientsPollRate).Wait();
                     }
                 );
                 try {
