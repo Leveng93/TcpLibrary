@@ -14,9 +14,9 @@ namespace TcpLibrary
             get { return _bufferSize; }
             set
             {
-                if (value < 2)
+                if (value < 1)
                     throw new ArgumentOutOfRangeException("Buffer size is too small");
-                if (value > (2 ^ 32))
+                if (value > UInt16.MaxValue)
                     throw new ArgumentOutOfRangeException("Buffer size is too large");
                 
                 _bufferSize = value;

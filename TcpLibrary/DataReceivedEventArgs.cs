@@ -6,5 +6,6 @@ namespace TcpLibrary
     {
         public ClientSocket Client { get; set; }
         public byte[] Data { get; set; }
+        public int BytesCount { get; set; }
     }
 }

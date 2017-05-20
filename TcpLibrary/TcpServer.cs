@@ -20,7 +20,7 @@ namespace TcpLibrary
         bool _listening;
 
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
-        public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisonnected;
+        public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisconnected;
         public event EventHandler<DataReceivedEventArgs> DataRceived;
         public event EventHandler<UnhandledExceptionEventArgs> ClientThreadExceptionThrown;
 
@@ -107,7 +107,7 @@ namespace TcpLibrary
                 lock(_clients)
                     _clients.Remove(client);
                 client.Disconnect();
-                ClientDisonnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
+                ClientDisconnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
                 });                
@@ -132,7 +132,8 @@ namespace TcpLibrary
                         DataRceived?.Invoke(this, new DataReceivedEventArgs
                         {
                             Client = client,
-                            Data = buffer
+                            Data = buffer,
+                            BytesCount = bytesRead
                         });
                     }
                 }
@@ -150,7 +151,7 @@ namespace TcpLibrary
                 {
                     Stop();
                     ClientConnected = null;
-                    ClientDisonnected = null;
+                    ClientDisconnected = null;
                     DataRceived = null;
                     ClientThreadExceptionThrown = null;
                 }

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -28,47 +29,49 @@ namespace TcpLibrary.Tests
         [Fact]
         public void RunningServerThatIsAlreadyRunningShouldFail()
         {   
-            var server = new TcpServer(IPAddress.Parse(ip), port);
-            
-            var doubleStartTask = Task.Run(async () => {
-                server.StartAsync().Wait(100);
-                await server.StartAsync(); 
-            });
+            using (var tcpServer = new TcpServer(IPAddress.Parse(ip), port))
+            {
+                var doubleStartTask = Task.Run(async () => {
+                    tcpServer.StartAsync().Wait(100);
+                    await tcpServer.StartAsync(); 
+                });
 
-            Assert.Throws<InvalidOperationException>(()=>{
-                try
-                {
-                    doubleStartTask.Wait();
-                }
-                catch(AggregateException ex)
-                {
-                    throw ex.InnerException;
-                }
-            });
+                Assert.Throws<InvalidOperationException>(()=>{
+                    try
+                    {
+                        doubleStartTask.Wait();
+                    }
+                    catch(AggregateException ex)
+                    {
+                        throw ex.InnerException;
+                    }
+                });
+            }
         }
 
         [Fact]
         public void RunningServerOnAlreadyUsingPortShouldFail()
         {
-            var endPoint = new IPEndPoint(IPAddress.Parse(ip), port);
-            var listener = new TcpListener(endPoint);
-            var tcpServer = new TcpServer(endPoint);
-            Assert.Throws<SocketException>(()=>{
-                try 
-                {
-                    listener.Start();
-                    tcpServer.StartAsync().Wait();
-                }
-                catch(AggregateException ex)
-                {
-                    throw ex.InnerException;
-                }
-                finally
-                {
-                    tcpServer.Stop();
-                    listener.Stop();
-                }
-            });
+            using (var tcpServer = new TcpServer(IPAddress.Parse(ip), port))
+            {
+                var listener = new TcpListener(IPAddress.Parse(ip), port);
+                Assert.Throws<SocketException>(()=>{
+                    try 
+                    {
+                        listener.Start();
+                        tcpServer.StartAsync().Wait();
+                    }
+                    catch(AggregateException ex)
+                    {
+                        throw ex.InnerException;
+                    }
+                    finally
+                    {
+                        tcpServer.Stop();
+                        listener.Stop();
+                    }
+                });
+            }
         }
 
         [Fact]
@@ -92,6 +95,10 @@ namespace TcpLibrary.Tests
             using (var tcpServer = new TcpServer(IPAddress.Parse(ip), port))
             {
                 var serverTask = tcpServer.StartAsync();
+                var cts = new CancellationTokenSource();
+                var ct = cts.Token;
+                tcpServer.ClientConnected += (s, e) => cts.Cancel();
+                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
                     (handler) => tcpServer.ClientConnected += handler, 
@@ -103,6 +110,10 @@ namespace TcpLibrary.Tests
                         }
                     }
                 );
+                try {
+                    serverTask.Wait(ct);
+                }
+                catch (OperationCanceledException) {}                
             }
         }
 
@@ -113,24 +124,24 @@ namespace TcpLibrary.Tests
             using(var client = new TcpClient())
             {
                 var serverTask = tcpServer.StartAsync();
-                tcpServer.ClientConnected += (s, e) => {
-                    Console.WriteLine(e.Client.EndPoint.ToString() + " connected");
-                };
-                tcpServer.ClientDisonnected += (s, e) => {
-                    Console.WriteLine(e.Client.EndPoint.ToString() + " disconnected");
-                };
-                tcpServer.ClientThreadExceptionThrown += (s, e) => Console.WriteLine("CLIENT EXCEPTION: " + e.ExceptionObject.Message);
+                var cts = new CancellationTokenSource();
+                var ct = cts.Token;
+                tcpServer.ClientDisconnected += (s, e) => cts.Cancel();
+                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
-                    (handler) => tcpServer.ClientDisonnected += handler, 
-                    (handler) => tcpServer.ClientDisonnected -= handler, 
+                    (handler) => tcpServer.ClientDisconnected += handler, 
+                    (handler) => tcpServer.ClientDisconnected -= handler, 
                     ()=>{                         
                         client.ConnectAsync(IPAddress.Parse(ip), port).Wait();
                         client.Client.Shutdown(SocketShutdown.Both);
                         Task.Delay(100).Wait();
                     }
                 );
-                serverTask.Wait(200);
+                try {
+                    serverTask.Wait(ct);
+                }
+                catch (OperationCanceledException) {}
             }
         }
         
@@ -140,21 +151,43 @@ namespace TcpLibrary.Tests
             using (var tcpServer = new TcpServer(IPAddress.Parse(ip), port))
             using(var client = new TcpClient())
             {                
-                var requestStr = String.Concat(Enumerable.Repeat("Ping", 1000));
-                var responseStr = String.Concat(Enumerable.Repeat("Pong", 1000));;                
-                var serverTask = tcpServer.StartAsync();
-                tcpServer.ClientConnected += (s, e) => {
-                    Console.WriteLine(e.Client.EndPoint.ToString() + " connected");                    
-                    Task.Run(() => client.Client.Send(Encoding.UTF8.GetBytes(requestStr)));
-                    e.Client.SendAsync(Encoding.UTF8.GetBytes(responseStr));
+                var bufferSize = ushort.MaxValue;
+                tcpServer.BufferSize = bufferSize;
+                client.SendBufferSize = bufferSize;
+                client.ReceiveBufferSize = bufferSize;
+                var requestStr = String.Concat(Enumerable.Repeat("Ping", 10000));
+                var responseStr = String.Concat(Enumerable.Repeat("Pong", 10000));
+                var cts = new CancellationTokenSource();
+                var ct = cts.Token;
+                Task requestTask = null;
+                Task responseTask = null;
+                tcpServer.ClientConnected += (s, e) => {               
+                    requestTask = Task.Run(() => client.Client.Send(Encoding.UTF8.GetBytes(requestStr)), ct);
+                    responseTask = e.Client.SendAsync(Encoding.UTF8.GetBytes(responseStr), ct);
                 };
-                tcpServer.ClientDisonnected += (s, e) => Console.WriteLine(e.Client.EndPoint.ToString() + " disconnected");
-                tcpServer.ClientThreadExceptionThrown += (s, e) => Console.WriteLine("CLIENT EXCEPTION: " + e.ExceptionObject.Message + "\n" + e.ExceptionObject.StackTrace);
+                tcpServer.ClientDisconnected += (s, e) => cts.Cancel();
                 tcpServer.DataRceived += (s, e) => {
-                    e.Client.Disconnect();
+                    Task.WaitAll(requestTask, responseTask);
+                    string receivedRequest, receivedResponse;
+                    receivedRequest = Encoding.UTF8.GetString(e.Data, 0, e.BytesCount);
+                    using (var networkStream = client.GetStream())
+                    {
+                        var buffer = new byte[bufferSize];
+                        var bytesCount = networkStream.Read(buffer, 0, buffer.Length);
+                        receivedResponse = Encoding.UTF8.GetString(buffer, 0, bytesCount);
+                    }
+                    Assert.Equal(requestStr, receivedRequest);
+                    Assert.Equal(responseStr, receivedResponse);
+                    client.Client.Shutdown(SocketShutdown.Both);
                 };
-                client.ConnectAsync(IPAddress.Parse(ip), port).Wait();
-                serverTask.Wait(3000); // shutdown after 3 sec
+                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+
+                var serverTask = tcpServer.StartAsync();
+                client.ConnectAsync(IPAddress.Parse(ip), port).Wait(ct);
+                try {
+                    serverTask.Wait(ct);
+                }
+                catch (OperationCanceledException) {}
             }
         }
     }
