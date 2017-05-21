@@ -23,7 +23,7 @@ namespace TcpLibrary
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisconnected;
         public event EventHandler<DataReceivedEventArgs> DataRceived;
-        public event EventHandler<UnhandledExceptionEventArgs> ClientThreadExceptionThrown;
+        public event EventHandler<UnhandledExceptionEventArgs> ExceptionThrown;
 
         public TcpServer(IPEndPoint endPoint)
         {
@@ -67,21 +67,27 @@ namespace TcpLibrary
             _listening = true;
             StartClientsPoll();
 
-            try
+            while (!_token.IsCancellationRequested)
             {
-                while (!_token.IsCancellationRequested)
-                {   
+                try
+                {
                     var tcpClient = await _listener.AcceptTcpClientAsync().WithWaitCancellation(_token);
-                    var task = StartHandleConnectionAsync(tcpClient);
+                    if (tcpClient != null)
+                        StartHandleConnectionAsync(tcpClient);
+                }
+                catch(OperationCanceledException) { } // server stopped by cancellation token source
+                catch(Exception ex)
+                {
+                    ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
+                    {
+                        ExceptionObject = ex
+                    });
                 }
             }
-            catch(OperationCanceledException) { } // server stopped by cancellation token source
-            finally
-            {
-                _listener.Stop();
-                StopClientsPoll();
-                _listening = false;
-            }
+
+            StopClientsPoll();
+            _listener.Stop();
+            _listening = false;
         }
 
         public void Stop()
@@ -115,7 +121,6 @@ namespace TcpLibrary
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
-
             var client = new ClientSocket(acceptedTcpClient);
             try
             {
@@ -129,7 +134,7 @@ namespace TcpLibrary
             }
             catch (Exception ex)
             {
-                ClientThreadExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
+                ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
                 {
                     ExceptionObject = ex
                 });
@@ -185,7 +190,7 @@ namespace TcpLibrary
                     ClientConnected = null;
                     ClientDisconnected = null;
                     DataRceived = null;
-                    ClientThreadExceptionThrown = null;
+                    ExceptionThrown = null;
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.

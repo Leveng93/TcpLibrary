@@ -99,7 +99,7 @@ namespace TcpLibrary.Tests
                 var cts = new CancellationTokenSource();
                 var ct = cts.Token;
                 tcpServer.ClientConnected += (s, e) => cts.Cancel();
-                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+                tcpServer.ExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
                     (handler) => tcpServer.ClientConnected += handler, 
@@ -128,7 +128,7 @@ namespace TcpLibrary.Tests
                 var cts = new CancellationTokenSource();
                 var ct = cts.Token;
                 tcpServer.ClientDisconnected += (s, e) => cts.Cancel();
-                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+                tcpServer.ExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 Assert.Raises<ClientConnectionStateChangedEventArgs>(
                     (handler) => tcpServer.ClientDisconnected += handler, 
@@ -181,7 +181,7 @@ namespace TcpLibrary.Tests
                     Assert.Equal(responseStr, receivedResponse);
                     client.Client.Shutdown(SocketShutdown.Both);
                 };
-                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+                tcpServer.ExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 var serverTask = tcpServer.StartAsync();
                 client.ConnectAsync(IPAddress.Parse(ip), port).Wait(ct);
@@ -212,11 +212,12 @@ namespace TcpLibrary.Tests
                     e.Client.Disconnect();                    
                 };
                 tcpServer.ClientDisconnected += (s, e) => {
-                    clientsLeft -= 1; 
+                    clientsLeft -= 1;
+                    Console.WriteLine($"Clients left: {clientsLeft}");
                     if (clientsLeft == 0)
                         cts.Cancel();
                 };
-                tcpServer.ClientThreadExceptionThrown += (s, e) => throw e.ExceptionObject;
+                tcpServer.ExceptionThrown += (s, e) => throw e.ExceptionObject;
 
                 var serverTask = tcpServer.StartAsync();
                 var clients = new List<TcpClient>(clientsCount);
