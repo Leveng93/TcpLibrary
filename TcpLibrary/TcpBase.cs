@@ -6,9 +6,23 @@ namespace TcpLibrary
 {
     public abstract class TcpBase
     {
+        const int defaultTimeout = 3000;
+        const int defaultBufferSize = 8192;
         protected CancellationTokenSource _tokenSource;    
         protected CancellationToken _token;
+        protected int _timeout;
         protected int _bufferSize;
+        public virtual int Timeout 
+        {
+            get { return _timeout; }
+            set
+            {
+                if (value < -1)
+                    throw new ArgumentOutOfRangeException();
+
+                _timeout = value;
+            }
+        }
         public virtual int BufferSize 
         {
             get { return _bufferSize; }
@@ -25,5 +39,11 @@ namespace TcpLibrary
 
         public abstract EndPoint EndPoint { get; }
         public abstract bool IsActive { get; }
+
+        public TcpBase()
+        {
+            _timeout = defaultTimeout;
+            _bufferSize = defaultBufferSize;
+        }
     }
 }

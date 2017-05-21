@@ -8,7 +8,6 @@ namespace TcpLibrary
 {
     public class ClientSocket : TcpBase
     {
-        const int defaultBufferSize = 8192;
         readonly TcpClient _client;
         public Guid Id { get; }
 
@@ -16,18 +15,43 @@ namespace TcpLibrary
         {
             Id = Guid.NewGuid();
             _client = client;
+            _client.Client.ReceiveTimeout = _timeout;
+            _client.Client.SendTimeout = _timeout;
             _tokenSource = new CancellationTokenSource();
             _token = _tokenSource.Token;
-            _bufferSize = defaultBufferSize;
         }
-
-        public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
+        public ClientSocket(TcpClient client, int timeout)
+        {
+            Id = Guid.NewGuid();
+            _timeout = timeout;
+            _client = client;
+            _client.Client.ReceiveTimeout = _timeout;
+            _client.Client.SendTimeout = _timeout;
+            _tokenSource = new CancellationTokenSource();
+            _token = _tokenSource.Token;
+        }
 
         internal CancellationToken DisconnectToken => _token;
 
         internal NetworkStream GetStream()
         {
             return _client.GetStream();
+        }
+
+        public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
+
+        public override int Timeout
+        {
+            get { return _timeout; }
+            set 
+            {
+                if (value < -1)
+                    throw new ArgumentOutOfRangeException();
+
+                _timeout = value;
+                _client.Client.SendTimeout = value;
+                _client.Client.ReceiveTimeout = value;
+            }
         }
 
         public override bool IsActive => _client.Client.IsConnected();

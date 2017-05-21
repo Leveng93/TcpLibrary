@@ -11,8 +11,9 @@ namespace TcpLibrary
 {
     public class TcpServer : TcpBase, IDisposable
     {
-        const int defaultPollRate = 250;
-        const int defaultBufferSize = 8192;
+        const bool defaultPollEnabled = true;
+        const int defaultPollRate = 500;
+
         readonly TcpListener _listener;
         readonly List<ClientSocket> _clients;
         Timer _pollTimer;
@@ -29,10 +30,11 @@ namespace TcpLibrary
         {
             _listener = new TcpListener(endPoint);
             _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+            _listener.Server.SendTimeout = _timeout;
+            _listener.Server.ReceiveTimeout = _timeout;
             _clients = new List<ClientSocket>();
-            _pollEnabled = true;
+            _pollEnabled = defaultPollEnabled;
             _pollRate = defaultPollRate;
-            _bufferSize = defaultBufferSize;
         }
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
@@ -53,6 +55,19 @@ namespace TcpLibrary
         {
             get { return _pollRate; }
             set { UpdateClientsPoll(value); }
+        }
+        public override int Timeout
+        {
+            get { return _timeout; }
+            set 
+            {
+                if (value < -1)
+                    throw new ArgumentOutOfRangeException();
+
+                _timeout = value;
+                _listener.Server.SendTimeout = value;
+                _listener.Server.ReceiveTimeout = value;
+            }
         }
         public override bool IsActive => _listening;
 
@@ -90,38 +105,9 @@ namespace TcpLibrary
             _listening = false;
         }
 
-        public void Stop()
-        {
-            _tokenSource?.Cancel();
-        }
-
-        private void StartClientsPoll()
-        {
-            if (_listening)
-                _pollTimer = _pollTimer ?? new Timer(PollClients, new object(), 0, _pollRate);
-        }
-        private void StopClientsPoll()
-        {
-            _pollTimer?.Dispose();
-        }
-        private void UpdateClientsPoll(int pollRate)
-        {   
-            if (pollRate < 1)
-                throw new ArgumentOutOfRangeException("Polling rate is too small");
-            _pollRate = pollRate;
-            _pollTimer?.Change(0, _pollRate);
-        }
-        private void PollClients(object state)
-        {
-            lock(_clients)
-                foreach(var client in _clients)
-                    if (!client.IsActive)
-                        client.Disconnect();
-        }
-
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
-            var client = new ClientSocket(acceptedTcpClient);
+            var client = new ClientSocket(acceptedTcpClient, _timeout);
             try
             {
                 lock(_clients)
@@ -175,6 +161,38 @@ namespace TcpLibrary
                     }
                 }
             }
+        }
+
+        public void Stop()
+        {
+            _tokenSource?.Cancel();
+        }
+
+        private void StartClientsPoll()
+        {
+            if (_listening)
+                _pollTimer = _pollTimer ?? new Timer(PollClients, new object(), 0, _pollRate);
+        }
+
+        private void StopClientsPoll()
+        {
+            _pollTimer?.Dispose();
+        }
+
+        private void UpdateClientsPoll(int pollRate)
+        {   
+            if (pollRate < 1)
+                throw new ArgumentOutOfRangeException("Polling rate is too small");
+            _pollRate = pollRate;
+            _pollTimer?.Change(0, _pollRate);
+        }
+        
+        private void PollClients(object state)
+        {
+            lock(_clients)
+                foreach(var client in _clients)
+                    if (!client.IsActive)
+                        client.Disconnect();
         }
 
         #region IDisposable Support
