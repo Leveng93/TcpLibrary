@@ -11,13 +11,11 @@ namespace TcpLibrary
 {
     public class TcpServer : TcpBase, IDisposable
     {
-        const bool defaultPollEnabled = true;
         const int defaultPollRate = 500;
 
         readonly TcpListener _listener;
         readonly List<ClientSocket> _clients;
         Timer _pollTimer;
-        bool _pollEnabled;
         int _pollRate;
         bool _listening;
 
@@ -33,7 +31,6 @@ namespace TcpLibrary
             _listener.Server.SendTimeout = _timeout;
             _listener.Server.ReceiveTimeout = _timeout;
             _clients = new List<ClientSocket>();
-            _pollEnabled = defaultPollEnabled;
             _pollRate = defaultPollRate;
         }
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
@@ -43,13 +40,7 @@ namespace TcpLibrary
         public ReadOnlyCollection<ClientSocket> Clients { get { lock(_clients) return _clients.AsReadOnly(); } }
         public bool ClientsPollEnabled
         {
-            get { return _pollEnabled; }
-            set 
-            {
-                _pollEnabled = value;
-                if (_pollEnabled) StartClientsPoll();
-                else StopClientsPoll();
-            }
+            get { return _pollRate > 0; }
         }
         public int ClientsPollRate 
         {
@@ -170,7 +161,7 @@ namespace TcpLibrary
 
         private void StartClientsPoll()
         {
-            if (_listening)
+            if (_listening && ClientsPollEnabled)
                 _pollTimer = _pollTimer ?? new Timer(PollClients, new object(), 0, _pollRate);
         }
 
@@ -180,13 +171,22 @@ namespace TcpLibrary
         }
 
         private void UpdateClientsPoll(int pollRate)
-        {   
-            if (pollRate < 1)
-                throw new ArgumentOutOfRangeException("Polling rate is too small");
+        {
+            if (pollRate < -1)
+                throw new ArgumentOutOfRangeException();
+
             _pollRate = pollRate;
-            _pollTimer?.Change(0, _pollRate);
+            if (pollRate == -1 || pollRate == 0)    // Turn off clients poll
+                _pollTimer?.Dispose();
+            else if (_listening)
+            {
+                if (_pollTimer != null)
+                    _pollTimer.Change(0, _pollRate);
+                else
+                    _pollTimer = new Timer(PollClients, new object(), 0, _pollRate);
+            }
         }
-        
+
         private void PollClients(object state)
         {
             lock(_clients)
