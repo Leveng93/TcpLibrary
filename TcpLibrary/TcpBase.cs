@@ -6,7 +6,7 @@ namespace TcpLibrary
 {
     public abstract class TcpBase
     {
-        const int defaultTimeout = 3000;
+        const int defaultTimeout = 5000;
         const int defaultBufferSize = 8192;
         protected CancellationTokenSource _tokenSource;    
         protected CancellationToken _token;

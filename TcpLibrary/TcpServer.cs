@@ -3,7 +3,10 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,20 +15,27 @@ namespace TcpLibrary
     public class TcpServer : TcpBase, IDisposable
     {
         const int defaultPollRate = 500;
-
+        const bool defaultClientCertificateRequired = false;
+        readonly X509Certificate _certificate;
         readonly TcpListener _listener;
         readonly List<ClientSocket> _clients;
         Timer _pollTimer;
         int _pollRate;
+        bool _clientCertificateRequired;
         bool _listening;
 
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientConnected;
         public event EventHandler<ClientConnectionStateChangedEventArgs> ClientDisconnected;
-        public event EventHandler<DataReceivedEventArgs> DataRceived;
+        public event EventHandler<DataReceivedEventArgs> DataReceived;
         public event EventHandler<UnhandledExceptionEventArgs> ExceptionThrown;
 
-        public TcpServer(IPEndPoint endPoint)
+        public TcpServer(IPEndPoint endPoint, string certFile)
         {
+            if (!string.IsNullOrEmpty(certFile))
+            {
+                _certificate = new X509Certificate(certFile);
+                _clientCertificateRequired = defaultClientCertificateRequired;
+            }
             _listener = new TcpListener(endPoint);
             _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             _listener.Server.SendTimeout = _timeout;
@@ -33,8 +43,14 @@ namespace TcpLibrary
             _clients = new List<ClientSocket>();
             _pollRate = defaultPollRate;
         }
+
+        public TcpServer(IPEndPoint endPoint) : this(endPoint, null) {}
         public TcpServer(long ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
         public TcpServer(IPAddress ipAddr, int port) : this(new IPEndPoint(ipAddr, port)) {}
+        public TcpServer(long ipAddr, int port, string certFile) 
+            : this(new IPEndPoint(ipAddr, port), certFile) {}
+        public TcpServer(IPAddress ipAddr, int port, string certFile) 
+            : this(new IPEndPoint(ipAddr, port), certFile) {}
 
         public override EndPoint EndPoint { get { return _listener.LocalEndpoint; } }
         public ReadOnlyCollection<ClientSocket> Clients { get { lock(_clients) return _clients.AsReadOnly(); } }
@@ -60,6 +76,16 @@ namespace TcpLibrary
                 _listener.Server.ReceiveTimeout = value;
             }
         }
+        public bool ClientCertificateRequired
+        {
+            get { return _certificate != null && _clientCertificateRequired; }
+            set
+            {
+                if (_certificate == null)
+                    throw new ArgumentException("Can`t check client certificate without server certificate");
+                _clientCertificateRequired = value;
+            }
+        }
         public override bool IsActive => _listening;
 
         public async Task StartAsync(CancellationToken? token = null)
@@ -81,14 +107,8 @@ namespace TcpLibrary
                     if (tcpClient != null)
                         StartHandleConnectionAsync(tcpClient);
                 }
-                catch(OperationCanceledException) { } // server stopped by cancellation token source
-                catch(Exception ex)
-                {
-                    ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
-                    {
-                        ExceptionObject = ex
-                    });
-                }
+                catch (OperationCanceledException) { } // server stopped by cancellation token source
+                catch (Exception ex) { ReportError(ex); }
             }
 
             StopClientsPoll();
@@ -98,7 +118,21 @@ namespace TcpLibrary
 
         private async Task StartHandleConnectionAsync(TcpClient acceptedTcpClient)
         {
-            var client = new ClientSocket(acceptedTcpClient, _timeout);
+            ClientSocket client = null;
+            try 
+            {
+                var encrypt = _certificate != null;
+                if (encrypt)
+                    using(var sslStream = new SslStream(client.GetStream(), true))
+                        await sslStream.AuthenticateAsServerAsync(_certificate, _clientCertificateRequired, SslProtocols.Tls, true);
+                client = new ClientSocket(acceptedTcpClient, encrypt);
+                client.Timeout = _timeout;
+            }
+            catch (Exception ex) 
+            { 
+                ReportError(ex);
+                return;
+            }
             try
             {
                 lock(_clients)
@@ -109,13 +143,7 @@ namespace TcpLibrary
                 });
                 await HandleConnectionAsync(client);
             }
-            catch (Exception ex)
-            {
-                ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
-                {
-                    ExceptionObject = ex
-                });
-            }
+            catch (Exception ex) { ReportError(ex); }
             finally
             {
                 lock(_clients)
@@ -124,7 +152,7 @@ namespace TcpLibrary
                 ClientDisconnected?.Invoke(this, new ClientConnectionStateChangedEventArgs
                 {
                     Client = client
-                });                
+                });
             }
         }
 
@@ -143,7 +171,7 @@ namespace TcpLibrary
                     var bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length, ct);
                     if (bytesRead != 0)
                     {
-                        DataRceived?.Invoke(this, new DataReceivedEventArgs
+                        DataReceived?.Invoke(this, new DataReceivedEventArgs
                         {
                             Client = client,
                             Data = buffer,
@@ -157,6 +185,14 @@ namespace TcpLibrary
         public void Stop()
         {
             _tokenSource?.Cancel();
+        }
+
+        private void ReportError(Exception ex)
+        {
+            ExceptionThrown?.Invoke(this, new UnhandledExceptionEventArgs
+            {
+                ExceptionObject = ex
+            });
         }
 
         private void StartClientsPoll()
@@ -207,7 +243,7 @@ namespace TcpLibrary
                     Stop();
                     ClientConnected = null;
                     ClientDisconnected = null;
-                    DataRceived = null;
+                    DataReceived = null;
                     ExceptionThrown = null;
                 }
 

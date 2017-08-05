@@ -1,41 +1,38 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Security.Authentication;
+using System.IO;
 
 namespace TcpLibrary
 {
     public class ClientSocket : TcpBase
     {
         readonly TcpClient _client;
+        readonly Stream _stream;
         public Guid Id { get; }
 
-        public ClientSocket(TcpClient client)
+        public ClientSocket(TcpClient client, bool encrypt)
         {
             Id = Guid.NewGuid();
             _client = client;
-            _client.Client.ReceiveTimeout = _timeout;
-            _client.Client.SendTimeout = _timeout;
             _tokenSource = new CancellationTokenSource();
             _token = _tokenSource.Token;
+            if (encrypt)
+                _stream = new SslStream(client.GetStream(), false);
+            else
+                _stream = _client.GetStream();
         }
-        public ClientSocket(TcpClient client, int timeout)
-        {
-            Id = Guid.NewGuid();
-            _timeout = timeout;
-            _client = client;
-            _client.Client.ReceiveTimeout = _timeout;
-            _client.Client.SendTimeout = _timeout;
-            _tokenSource = new CancellationTokenSource();
-            _token = _tokenSource.Token;
-        }
+        public ClientSocket(TcpClient client) : this(client, false) {}
 
         internal CancellationToken DisconnectToken => _token;
 
-        internal NetworkStream GetStream()
+        internal Stream GetStream()
         {
-            return _client.GetStream();
+            return _stream;
         }
 
         public override EndPoint EndPoint { get { return _client.Client.RemoteEndPoint; } }
@@ -49,6 +46,8 @@ namespace TcpLibrary
                     throw new ArgumentOutOfRangeException();
 
                 _timeout = value;
+                _stream.ReadTimeout = value;
+                _stream.WriteTimeout = value;
                 _client.Client.SendTimeout = value;
                 _client.Client.ReceiveTimeout = value;
             }
@@ -63,7 +62,7 @@ namespace TcpLibrary
                 Disconnect();
                 return;
             }
-            await _client.GetStream().WriteAsync(data, 0, data.Length, _token);
+            await _stream.WriteAsync(data, 0, data.Length, _token);
         }
 
         public async Task SendAsync(byte[] data, CancellationToken token)
@@ -75,7 +74,7 @@ namespace TcpLibrary
             }
             var cts = CancellationTokenSource.CreateLinkedTokenSource(token, _token);
             var ct = _tokenSource.Token;
-            await _client.GetStream().WriteAsync(data, 0, data.Length, ct);
+            await _stream.WriteAsync(data, 0, data.Length, ct);
         }
 
         public void Disconnect()

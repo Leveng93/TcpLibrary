@@ -167,7 +167,7 @@ namespace TcpLibrary.Tests
                     responseTask = e.Client.SendAsync(Encoding.UTF8.GetBytes(responseStr), ct);
                 };
                 tcpServer.ClientDisconnected += (s, e) => cts.Cancel();
-                tcpServer.DataRceived += (s, e) => {
+                tcpServer.DataReceived += (s, e) => {
                     Task.WaitAll(requestTask, responseTask);
                     string receivedRequest, receivedResponse;
                     receivedRequest = Encoding.UTF8.GetString(e.Data, 0, e.BytesCount);
@@ -203,7 +203,7 @@ namespace TcpLibrary.Tests
                 var responseStr = String.Concat(Enumerable.Repeat("Pong", 1000));
                 var cts = new CancellationTokenSource();
                 var ct = cts.Token;
-                tcpServer.DataRceived += async (s, e) => {
+                tcpServer.DataReceived += async (s, e) => {
                     var receivedRequest = Encoding.UTF8.GetString(e.Data, 0, e.BytesCount);
                     await e.Client.SendAsync(Encoding.UTF8.GetBytes(responseStr), ct);
                     // Console.WriteLine($"Client {e.Client.EndPoint} sended {receivedRequest}");
