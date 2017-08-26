@@ -80,7 +80,7 @@ namespace TcpLibrary
         public void Disconnect()
         {
             _tokenSource.Cancel();
-            if (_client.Client.Connected)
+            if (_client.Client.IsConnected())
                 _client.Client.Shutdown(SocketShutdown.Both);
         }
     }
